@@ -7,11 +7,12 @@ var express = require('express');
 var app = express();
 
 app.get("/api/whoami", function (req, res) {
-  const ip = req.ip;
-  // console.log(JSON.stringify(req.headers));
-  const language = req.headers['accept-language'];
-  const software = req.headers['user-agent'];
-  res.send({ip: ip, language: language, software: software});
+  const ua = req.headers["user-agent"];
+  res.json({
+    ipaddress: req.headers["x-forwarded-for"] || req.ip,
+    language: req.acceptsLanguages()[0],
+    software: ua
+  });
 })
 
 // enable CORS (https://en.wikipedia.org/wiki/Cross-origin_resource_sharing)
