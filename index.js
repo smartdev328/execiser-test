@@ -1,16 +1,19 @@
 require('dotenv').config();
+var bodyParser = require('body-parser');
 // server.js
 // where your node app starts
 
 // init project
 var express = require('express');
+
 var app = express();
+app.use(bodyParser.json({ type: 'application/*+json' }))
 
 app.get("/api/whoami", function (req, res) {
   const ua = req.headers["user-agent"];
   res.json({
-    ipaddress: req.headers["x-forwarded-for"] || req.ip,
-    language: req.acceptsLanguages()[0],
+    ipaddress: req.ip,
+    language: req.headers['accept-language'],
     software: ua
   });
 })
