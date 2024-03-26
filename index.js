@@ -1,148 +1,244 @@
-require('dotenv').config();
 const express = require('express');
+const app = express();
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const dns = require('dns');
-const fs = require('fs');
-const app = express();
+const mongoose = require('mongoose');
+const shortid = require('shortid');
 
-// Basic Configuration
-const port = process.env.PORT || 3000;
+require('dotenv').config();
+
+//* Middleware
 
 app.use(cors());
-app.use(bodyParser.urlencoded({extended: false}));
+app.use(express.static('public'));
 app.use(bodyParser.json());
-app.use('/public', express.static(`${process.cwd()}/public`));
+app.use(bodyParser.urlencoded({ extended: false }));
 
-app.get('/', function(req, res) {
-  res.sendFile(process.cwd() + '/views/index.html');
+//* MongoDB
+
+mongoose.connect(process.env.MONGO_URI, {
+	useNewUrlParser: true,
+	useUnifiedTopology: true,
 });
 
-/*-----------------------------------------------------------------------------------------*/
-/*---------------------------------------MY CODE-------------------------------------------*/
-/*-----------------------------------------------------------------------------------------*/
+//* Schemas
 
-//1.function to manage local file storage (File data.json)
-function dataManagement(action, input) {
-  let filePath = './public/data.json';
-  //check if file exist -> create new file if not exist
-  if (!fs.existsSync(filePath)) {
-    fs.closeSync(fs.openSync(filePath, 'w'));
-  }
-
-  //read file data.json
-  let file = fs.readFileSync(filePath);
-  
-  //screnario for save input into data
-  if (action == 'save data' && input != null) {
-      //check if file is empty
-    if (file.length == 0) {
-      //add new data to json file
-      fs.writeFileSync(filePath, JSON.stringify([input], null, 2));
-    } else {
-      //append input to data.json file
-      let data = JSON.parse(file.toString());
-      //check if input.original_url already exist
-      let inputExist = [];
-      inputExist  = data.map(d => d.original_url);
-      let check_input = inputExist.includes(input.original_url);     
-      if (check_input === false) {
-        //add input element to existing data json object
-        data.push(input);
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-      }
-    }
-  }
-
-  //screnario for load the data
-  else if (action == 'load data' && input == null) {
-    if (file.length == 0) { return; }
-    else {
-      let dataArray = JSON.parse(file);
-      return dataArray;
-    }
-  }
-}
-
-//2.function for random short_url (using Math.random())
-function gen_shorturl() {
-  let all_Data   = dataManagement('load data');
-  // generate random number between 1 to data_length*1000
-  let min = 1; let max = 1000; 
-  if ( all_Data != undefined && all_Data.length > 0 ) { max = all_Data.length*1000 }
-  else { max = 1000; }
-  let short = Math.ceil(Math.random()* (max - min + 1) + min);
-  
-  //get all existing short url
-  if (all_Data === undefined) { return short; }
-  else {
-    //check if short url already exist
-    let shortExist  = all_Data.map(d => d.short_url);
-    let check_short = shortExist.includes(short);
-    if ( check_short ) {gen_shorturl(); } else { return short; }
-  }
-  
-}
-
-//3.middleware to handle user url input
-app.post('/api/shorturl', (req,res) => {
-  //Create variable needs
-  let input = '', domain = '', param = '', short = 0;
-  
-  //Post url from user input
-  input = req.body.url;
-  if (input === null || input === '') { 
-    return res.json({ error: 'invalid url' }); 
-  }
-  
-  //matches a string with regular expr => return array
-  //url should contains : http:// or https://
-  domain = input.match(/^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)/igm);
-  //search a string with regular expr, and replace the string -> delete https://
-  param = domain[0].replace(/^https?:\/\//i, "");
-
-  //Validate the url
-  dns.lookup(param, (err, url_Ip) => {
-    if (err) {
-      //If url is not valid -> respond error
-      console.log(url_Ip);
-      return res.json({ error: 'invalid url' });
-    }
-    else {
-      //If url is valid -> generate short url
-      short = gen_shorturl();
-      dict = {original_url : input, short_url : short};
-      dataManagement("save data", dict);
-      return res.json(dict);
-    }
-  });
+const exerciseSchema = new mongoose.Schema({
+	userId: String,
+	username: String,
+	description: { type: String, required: true },
+	duration: { type: Number, required: true },
+	date: String,
 });
 
-//4.middleware to handle existing short url
-app.get('/api/shorturl/:shorturl', (req,res) => {
-  let input    = Number(req.params.shorturl);
-  let all_Data = dataManagement('load data');
-  
-  //check if short url already exist
-  let shortExist  = all_Data.map(d => d.short_url);
-  let check_short = shortExist.includes(input);
-  if (check_short && all_Data != undefined) {
-    data_found = all_Data[shortExist.indexOf(input)];
-    // res.json({data : data_found, short : input, existing : shortExist});
-    res.redirect(data_found.original_url);
-  }
-  else {
-    res.json({data : 'No matching data', short : input, existing : shortExist});
-  }
+const userSchema = new mongoose.Schema({
+	username: String,
 });
 
-/*=========================================================================================*/
+//* Models
 
-// Your first API endpoint
-app.get('/api/hello', function(req, res) {
-  res.json({ greeting: 'hello API' });
+let User = mongoose.model('User', userSchema);
+
+let Exercise = mongoose.model('Exercise', exerciseSchema);
+
+//* Endpoints
+
+/*
+ * GET
+ * Delete all users
+ */
+app.get('/api/users/delete', function (_req, res) {
+	console.log('### delete all users ###'.toLocaleUpperCase());
+
+	User.deleteMany({}, function (err, result) {
+		if (err) {
+			console.error(err);
+			res.json({
+				message: 'Deleting all users failed!',
+			});
+		}
+
+		res.json({ message: 'All users have been deleted!', result: result });
+	});
 });
 
-app.listen(port, function() {
-  console.log(`Listening on port ${port}`);
+/*
+ * GET
+ * Delete all exercises
+ */
+app.get('/api/exercises/delete', function (_req, res) {
+	console.log('### delete all exercises ###'.toLocaleUpperCase());
+
+	Exercise.deleteMany({}, function (err, result) {
+		if (err) {
+			console.error(err);
+			res.json({
+				message: 'Deleting all exercises failed!',
+			});
+		}
+
+		res.json({ message: 'All exercises have been deleted!', result: result });
+	});
+});
+
+app.get('/', async (_req, res) => {
+	res.sendFile(__dirname + '/views/index.html');
+	await User.syncIndexes();
+	await Exercise.syncIndexes();
+});
+
+/*
+ * GET
+ * Get all users
+ */
+app.get('/api/users', function (_req, res) {
+	console.log('### get all users ###'.toLocaleUpperCase());
+
+	User.find({}, function (err, users) {
+		if (err) {
+			console.error(err);
+			res.json({
+				message: 'Getting all users failed!',
+			});
+		}
+
+		if (users.length === 0) {
+			res.json({ message: 'There are no users in the database!' });
+		}
+
+		console.log('users in database: '.toLocaleUpperCase() + users.length);
+
+		res.json(users);
+	});
+});
+
+/*
+ * POST
+ * Create a new user
+ */
+app.post('/api/users', function (req, res) {
+	const inputUsername = req.body.username;
+
+	console.log('### create a new user ###'.toLocaleUpperCase());
+
+	//? Create a new user
+	let newUser = new User({ username: inputUsername });
+
+	console.log(
+		'creating a new user with username - '.toLocaleUpperCase() + inputUsername
+	);
+
+	newUser.save((err, user) => {
+		if (err) {
+			console.error(err);
+			res.json({ message: 'User creation failed!' });
+		}
+
+		res.json({ username: user.username, _id: user._id });
+	});
+});
+
+/*
+ * POST
+ * Add a new exercise
+ * @param _id
+ */
+app.post('/api/users/:_id/exercises', function (req, res) {
+	var userId = req.params._id;
+	var description = req.body.description;
+	var duration = req.body.duration;
+	var date = req.body.date;
+
+	console.log('### add a new exercise ###'.toLocaleUpperCase());
+
+	//? Check for date
+	if (!date) {
+		date = new Date().toISOString().substring(0, 10);
+	}
+
+	console.log(
+		'looking for user with id ['.toLocaleUpperCase() + userId + '] ...'
+	);
+
+	//? Find the user
+	User.findById(userId, (err, userInDb) => {
+		if (err) {
+			console.error(err);
+			res.json({ message: 'There are no users with that ID in the database!' });
+		}
+
+		//* Create new exercise
+		let newExercise = new Exercise({
+			userId: userInDb._id,
+			username: userInDb.username,
+			description: description,
+			duration: parseInt(duration),
+			date: date,
+		});
+
+		newExercise.save((err, exercise) => {
+			if (err) {
+				console.error(err);
+				res.json({ message: 'Exercise creation failed!' });
+			}
+
+			res.json({
+				username: userInDb.username,
+				description: exercise.description,
+				duration: exercise.duration,
+				date: new Date(exercise.date).toDateString(),
+				_id: userInDb._id,
+			});
+		});
+	});
+});
+
+/*
+ * GET
+ * Get a user's exercise log
+ * @param _id
+ */
+app.get('/api/users/:_id/logs', async function (req, res) {
+	const userId = req.params._id;
+	const from = req.query.from || new Date(0).toISOString().substring(0, 10);
+	const to =
+		req.query.to || new Date(Date.now()).toISOString().substring(0, 10);
+	const limit = Number(req.query.limit) || 0;
+
+	console.log('### get the log from a user ###'.toLocaleUpperCase());
+
+	//? Find the user
+	let user = await User.findById(userId).exec();
+
+	console.log(
+		'looking for exercises with id ['.toLocaleUpperCase() + userId + '] ...'
+	);
+
+	//? Find the exercises
+	let exercises = await Exercise.find({
+		userId: userId,
+		date: { $gte: from, $lte: to },
+	})
+		.select('description duration date')
+		.limit(limit)
+		.exec();
+
+	let parsedDatesLog = exercises.map((exercise) => {
+		return {
+			description: exercise.description,
+			duration: exercise.duration,
+			date: new Date(exercise.date).toDateString(),
+		};
+	});
+
+	res.json({
+		_id: user._id,
+		username: user.username,
+		count: parsedDatesLog.length,
+		log: parsedDatesLog,
+	});
+});
+
+const listener = app.listen(process.env.PORT || 3000, () => {
+	console.log('Your app is listening on port ' + listener.address().port);
 });
